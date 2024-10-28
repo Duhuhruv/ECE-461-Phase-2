@@ -1,0 +1,87 @@
+name: CI/CD Pipeline with AWS Integration
+
+on:
+  push:
+    branches:
+      - main  # Change this to your main deployment branch if necessary
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '18'  # Adjust the Node version if needed
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Assume the IAM role using AWS credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Deploy to S3 (Static Assets)
+      - name: Deploy static assets to S3
+        run: |
+          aws s3 sync ./dist s3://461frontend --delete
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      # Package and Deploy to AWS Lambda
+      - name: Package and Deploy to AWS Lambda
+        run: |
+          cd src/lambda
+          zip -r ../../function.zip .  # Package only Lambda code and dependencies
+          cd ../..
+          aws lambda update-function-code --function-name packageUploadHandler --zip-file fileb://function.zip
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+
+      # Check for backend changes to conditionally deploy to EC2
+      - name: Check for backend changes
+        id: backend_check
+        run: |
+          if git diff --quiet HEAD^ HEAD -- src/backend; then
+            echo "no_backend_changes=true" >> $GITHUB_ENV
+          else
+            echo "no_backend_changes=false" >> $GITHUB_ENV
+          fi
+
+      # Deploy to EC2 by copying the entire project directory
+      - name: Deploy to EC2
+        if: env.no_backend_changes == 'false'  # Only deploy if backend changes were detected
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ec2-user 
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          scp -i $EC2_SSH_KEY -o "StrictHostKeyChecking=no" -r ./* $EC2_USER@$EC2_HOST:/path/to/your/project
+          ssh -i $EC2_SSH_KEY -o "StrictHostKeyChecking=no" $EC2_USER@$EC2_HOST << 'EOF'
+          cd /home/ec2-user/ECE461_server  # Adjust this to match the local directory path used for deployment
+          npm install
+          npm run build
+          EOF
