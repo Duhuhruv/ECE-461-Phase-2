@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3  # Updated to v3
 
       - name: Set up Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3  # Updated to v3
         with:
           node-version: '18'  # Adjust the Node version if needed
 
@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3  # Updated to v3
 
       # Assume the IAM role using AWS credentials
       - name: Configure AWS Credentials
@@ -39,19 +39,19 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       # Deploy to S3 (Static Assets)
-      - name: Deploy static assets to S3
+      - name: Deploy static assets to S3 using Node.js script with SDK v3
         run: |
-          aws s3 sync ./dist s3://461frontend --delete
+          node deploy-s3.js
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
-
-      # Package and Deploy to AWS Lambda
+      
+      # Package and Deploy to AWS Lambda using Node.js script with SDK v3
       - name: Package and Deploy to AWS Lambda
         run: |
           cd src/lambda
           zip -r ../../function.zip .  # Package only Lambda code and dependencies
           cd ../..
-          aws lambda update-function-code --function-name packageUploadHandler --zip-file fileb://function.zip
+          node deploy-lambda.js
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
 
